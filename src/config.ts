@@ -9,6 +9,7 @@ function required(key: string): string {
 export const config = {
   BOT_TOKEN: required("BOT_TOKEN"),
   GROUP_CHAT_ID: required("GROUP_CHAT_ID"),
-  SEND_TIME: process.env.SEND_TIME ?? "08:00",
+  SEND_TIME: process.env.SEND_TIME ?? "18:00",
   TIMEZONE: process.env.TIMEZONE ?? "Asia/Tashkent",
+  MONGODB_URI: required("MONGODB_URI"),
 } as const;

@@ -23,12 +23,10 @@ function initial(): SessionData {
 
 /**
  * Sana matnini "YYYY-MM-DD" formatiga o'tkazadi.
- * Qabul qilinadigan formatlar:
- *   bugun / today / "-" / ""  → bugungi sana
- *   20.09.2026  →  2026-09-20
- *   20/09/2026  →  2026-09-20
- *   2026-09-20  →  2026-09-20
- *   2026.09.20  →  2026-09-20
+ *   bugun / today  → bugungi sana
+ *   20.09.2026     → 2026-09-20
+ *   20/09/2026     → 2026-09-20
+ *   2026-09-20     → 2026-09-20
  */
 function parseDate(input: string): string | null {
   const t = input.trim().toLowerCase();
@@ -41,7 +39,6 @@ function parseDate(input: string): string | null {
   if (parts.length !== 3) return null;
 
   let year: number, month: number, day: number;
-
   if (parts[0].length === 4) {
     [year, month, day] = parts.map(Number);
   } else {
@@ -94,7 +91,7 @@ export function registerHandlers(bot: Bot<MyContext>): void {
   // /sendnow — guruhga hozir yuborish
   bot.command("sendnow", async (ctx) => {
     const dateStr = new Date().toISOString().slice(0, 10);
-    const entries = getHomework(dateStr);
+    const entries = await getHomework(dateStr);
     const text = formatHomeworkList(
       entries,
       `📚 Bugungi uyga vazifalar (${dateStr})`
@@ -145,14 +142,13 @@ export function registerHandlers(bot: Bot<MyContext>): void {
         return;
       }
 
-      const id = saveHomework(ctx.session.subject!, ctx.session.task!, due);
+      const id = await saveHomework(ctx.session.subject!, ctx.session.task!, due);
       ctx.session.step = "idle";
       await ctx.reply(
         `✅ Vazifa saqlandi!\n\n` +
         `📚 Fan: <b>${ctx.session.subject}</b>\n` +
         `📝 Vazifa: ${ctx.session.task}\n` +
-        `📅 Sana: <b>${due}</b>\n` +
-        `🆔 ID: <code>${id}</code>`,
+        `📅 Sana: <b>${due}</b>`,
         { parse_mode: "HTML" }
       );
       ctx.session.subject = undefined;
@@ -161,6 +157,5 @@ export function registerHandlers(bot: Bot<MyContext>): void {
   });
 }
 
-// Session middleware ni eksport qilish
 export { session, initial };
 export type { MyContext };

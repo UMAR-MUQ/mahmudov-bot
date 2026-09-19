@@ -1,13 +1,17 @@
 import { Bot } from "grammy";
 import { session, initial, registerHandlers } from "./handlers";
 import { setupScheduler } from "./scheduler";
+import { connectDB } from "./storage";
 import { config } from "./config";
 import type { MyContext } from "./handlers";
 
 async function main(): Promise<void> {
+  // MongoDB ga ulanish
+  await connectDB();
+
   const bot = new Bot<MyContext>(config.BOT_TOKEN);
 
-  // Session middleware (xotirada saqlash — Railway uchun yetarli)
+  // Session middleware
   bot.use(session({ initial }));
 
   // Handlerlarni ulash
