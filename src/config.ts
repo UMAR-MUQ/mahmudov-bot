@@ -11,5 +11,4 @@ export const config = {
   GROUP_CHAT_ID: required("GROUP_CHAT_ID"),
   SEND_TIME: process.env.SEND_TIME ?? "18:00",
   TIMEZONE: process.env.TIMEZONE ?? "Asia/Tashkent",
-  MONGODB_URI: required("MONGODB_URI"),
 } as const;

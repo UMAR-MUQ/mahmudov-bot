@@ -1,8 +1,12 @@
-import { MongoClient, Collection, Document } from "mongodb";
+import fs from "fs";
+import path from "path";
 
-const MONGODB_URI = process.env.MONGODB_URI!;
-const DB_NAME = "mahmudov_bot";
-const COLLECTION_NAME = "homework";
+// Railway Volume mount path — agar yo'q bo'lsa lokal data/ papka
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
+  ? path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH)
+  : path.join(__dirname, "..", "data");
+
+const HOMEWORK_FILE = path.join(DATA_DIR, "homework.json");
 
 export interface HomeworkEntry {
   id: string;
@@ -12,87 +16,97 @@ export interface HomeworkEntry {
   added: string;
 }
 
-let client: MongoClient | null = null;
-let collection: Collection<HomeworkEntry & Document> | null = null;
-
-export async function connectDB(): Promise<void> {
-  if (client) return;
-  client = new MongoClient(MONGODB_URI);
-  await client.connect();
-  const db = client.db(DB_NAME);
-  collection = db.collection<HomeworkEntry & Document>(COLLECTION_NAME);
-  // dueDate bo'yicha tezkor qidirish uchun index
-  await collection.createIndex({ dueDate: 1 });
-  console.log("MongoDB ga ulandi ✅");
-}
-
-function getCollection(): Collection<HomeworkEntry & Document> {
-  if (!collection) throw new Error("MongoDB ulanmagan! connectDB() chaqiring.");
-  return collection;
-}
+type HomeworkDB = Record<string, HomeworkEntry[]>;
 
 function today(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Yangi vazifa saqlash. */
+function ensureDir(): void {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadAll(): HomeworkDB {
+  ensureDir();
+  if (!fs.existsSync(HOMEWORK_FILE)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(HOMEWORK_FILE, "utf-8")) as HomeworkDB;
+  } catch {
+    return {};
+  }
+}
+
+function saveAll(db: HomeworkDB): void {
+  ensureDir();
+  fs.writeFileSync(HOMEWORK_FILE, JSON.stringify(db, null, 2), "utf-8");
+}
+
+/** Yangi vazifa saqlash */
 export async function saveHomework(
   subject: string,
   task: string,
   dueDate?: string
 ): Promise<string> {
-  const col = getCollection();
-  const due = dueDate ?? today();
-  const count = await col.countDocuments({ dueDate: due });
-  const id = `${due}_${count + 1}`;
-  await col.insertOne({ id, subject, task, dueDate: due, added: today() });
+  const db = loadAll();
+  const key = dueDate ?? today();
+  if (!db[key]) db[key] = [];
+  const id = `${key}_${db[key].length + 1}`;
+  db[key].push({ id, subject, task, dueDate: key, added: today() });
+  saveAll(db);
   return id;
 }
 
-/** Berilgan sana uchun vazifalar (default: bugun). */
+/** Berilgan sana uchun vazifalar */
 export async function getHomework(targetDate?: string): Promise<HomeworkEntry[]> {
-  const col = getCollection();
-  const due = targetDate ?? today();
-  return col.find({ dueDate: due }).toArray();
+  return loadAll()[targetDate ?? today()] ?? [];
 }
 
-/** Bugundan boshlab barcha kelgusi vazifalar. */
+/** Bugundan boshlab barcha kelgusi vazifalar */
 export async function getAllUpcoming(): Promise<Record<string, HomeworkEntry[]>> {
-  const col = getCollection();
+  const db = loadAll();
   const t = today();
-  const entries = await col.find({ dueDate: { $gte: t } }).sort({ dueDate: 1 }).toArray();
-
-  const grouped: Record<string, HomeworkEntry[]> = {};
-  for (const e of entries) {
-    if (!grouped[e.dueDate]) grouped[e.dueDate] = [];
-    grouped[e.dueDate].push(e);
-  }
-  return grouped;
+  return Object.fromEntries(
+    Object.entries(db)
+      .filter(([k]) => k >= t)
+      .sort(([a], [b]) => a.localeCompare(b))
+  );
 }
 
-/** ID bo'yicha vazifani yangilash. Faqat berilgan maydonlar o'zgaradi. */
+/** ID bo'yicha vazifani yangilash */
 export async function updateHomework(
   entryId: string,
   fields: { subject?: string; task?: string; dueDate?: string }
 ): Promise<boolean> {
-  const col = getCollection();
-  const update: Partial<HomeworkEntry> = {};
-  if (fields.subject) update.subject = fields.subject;
-  if (fields.task) update.task = fields.task;
-  if (fields.dueDate) update.dueDate = fields.dueDate;
-  if (Object.keys(update).length === 0) return true;
-  const result = await col.updateOne({ id: entryId }, { $set: update });
-  return result.matchedCount === 1;
+  const db = loadAll();
+  for (const [key, entries] of Object.entries(db)) {
+    const idx = entries.findIndex((e) => e.id === entryId);
+    if (idx !== -1) {
+      if (fields.subject) db[key][idx].subject = fields.subject;
+      if (fields.task) db[key][idx].task = fields.task;
+      if (fields.dueDate) db[key][idx].dueDate = fields.dueDate;
+      saveAll(db);
+      return true;
+    }
+  }
+  return false;
 }
 
-/** ID bo'yicha o'chirish. */
+/** ID bo'yicha o'chirish */
 export async function deleteHomework(entryId: string): Promise<boolean> {
-  const col = getCollection();
-  const result = await col.deleteOne({ id: entryId });
-  return result.deletedCount === 1;
+  const db = loadAll();
+  for (const [key, entries] of Object.entries(db)) {
+    const idx = entries.findIndex((e) => e.id === entryId);
+    if (idx !== -1) {
+      db[key].splice(idx, 1);
+      if (db[key].length === 0) delete db[key];
+      saveAll(db);
+      return true;
+    }
+  }
+  return false;
 }
 
-/** Vazifalar ro'yxatini HTML matn sifatida formatlash. */
+/** Vazifalar ro'yxatini HTML matn sifatida formatlash */
 export function formatHomeworkList(
   entries: HomeworkEntry[],
   title = "📚 Uyga vazifalar"
@@ -107,4 +121,10 @@ export function formatHomeworkList(
     );
   });
   return lines.join("\n");
+}
+
+/** DB ulanish — JSON uchun hech narsa kerak emas */
+export async function connectDB(): Promise<void> {
+  ensureDir();
+  console.log(`Ma'lumotlar saqlash joyi: ${HOMEWORK_FILE}`);
 }
