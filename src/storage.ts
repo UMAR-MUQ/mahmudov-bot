@@ -70,6 +70,21 @@ export async function getAllUpcoming(): Promise<Record<string, HomeworkEntry[]>>
   return grouped;
 }
 
+/** ID bo'yicha vazifani yangilash. Faqat berilgan maydonlar o'zgaradi. */
+export async function updateHomework(
+  entryId: string,
+  fields: { subject?: string; task?: string; dueDate?: string }
+): Promise<boolean> {
+  const col = getCollection();
+  const update: Partial<HomeworkEntry> = {};
+  if (fields.subject) update.subject = fields.subject;
+  if (fields.task) update.task = fields.task;
+  if (fields.dueDate) update.dueDate = fields.dueDate;
+  if (Object.keys(update).length === 0) return true;
+  const result = await col.updateOne({ id: entryId }, { $set: update });
+  return result.matchedCount === 1;
+}
+
 /** ID bo'yicha o'chirish. */
 export async function deleteHomework(entryId: string): Promise<boolean> {
   const col = getCollection();
