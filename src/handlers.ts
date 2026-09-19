@@ -23,37 +23,60 @@ function initial(): SessionData {
   return { step: "idle" };
 }
 
+/**
+ * Sana matnini "YYYY-MM-DD" formatiga o'tkazadi.
+ * Qabul qilinadigan formatlar:
+ *   bugun / today / "-" / ""  → bugungi sana
+ *   20.09.2026                → 2026-09-20
+ *   20/09/2026                → 2026-09-20
+ *   2026.09.20                → 2026-09-20
+ *   2026-09-20                → 2026-09-20
+ *   2026/09/20                → 2026-09-20
+ * Noto'g'ri bo'lsa null qaytaradi.
+ */
+function parseDate(input: string): string | null {
+  const t = input.trim().toLowerCase();
+
+  if (["bugun", "today", "-", ""].includes(t)) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  // Ajratuvchi sifatida - . / qabul qilinadi
+  const parts = t.split(/[-./]/);
+  if (parts.length !== 3) return null;
+
+  let year: number, month: number, day: number;
+
+  if (parts[0].length === 4) {
+    // YYYY-MM-DD yoki YYYY.MM.DD
+    [year, month, day] = parts.map(Number);
+  } else {
+    // DD.MM.YYYY yoki DD/MM/YYYY
+    [day, month, year] = parts.map(Number);
+  }
+
+  if (!year || !month || !day) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
 // ---------------------------------------------------------------------------
-// Handlerllarni botga ulash
+// Handlerlarni botga ulash
 // ---------------------------------------------------------------------------
 export function registerHandlers(bot: Bot<MyContext>): void {
+
   // /start
   bot.command("start", async (ctx) => {
     await ctx.reply(
       "👋 Salom! Men <b>Mahmudov Bot</b>man.\n\n" +
-      "Uyga vazifalarni yozib, har kuni belgilangan vaqtda guruhga yuboraman.\n\n" +
+      "Uyga vazifalarni yozib, har kuni soat <b>18:00</b> da guruhga yuboraman.\n\n" +
       "📌 Buyruqlar:\n" +
       "/add — yangi vazifa qo'shish\n" +
       "/today — bugungi vazifalar\n" +
       "/list — barcha kelgusi vazifalar\n" +
-      "/delete — vazifani o'chirish\n" +
-      "/sendnow — guruhga hozir yuborish (test)\n" +
-      "/help — batafsil yordam",
-      { parse_mode: "HTML" }
-    );
-  });
-
-  // /help
-  bot.command("help", async (ctx) => {
-    await ctx.reply(
-      "<b>📖 Yordam</b>\n\n" +
-      "<b>/add</b> — yangi uyga vazifa qo'shish\n" +
-      "<b>/today</b> — bugungi vazifalar ro'yxati\n" +
-      "<b>/list</b> — barcha kelgusi vazifalar\n" +
-      "<b>/delete &lt;id&gt;</b> — ID bo'yicha o'chirish\n" +
-      "  misol: <code>/delete 2026-09-19_1</code>\n\n" +
-      `Bot har kuni <b>${config.SEND_TIME}</b> da guruhga yuboradi.\n` +
-      `Guruh ID: <code>${config.GROUP_CHAT_ID}</code>`,
+      "/delete — vazifani o'chirish",
       { parse_mode: "HTML" }
     );
   });
@@ -137,7 +160,7 @@ export function registerHandlers(bot: Bot<MyContext>): void {
   });
 
   // ---------------------------------------------------------------------------
-  // FSM — oddiy matn xabarlari orqali /add bosqichlari
+  // FSM — /add bosqichlari
   // ---------------------------------------------------------------------------
   bot.on("message:text", async (ctx) => {
     const step = ctx.session.step;
@@ -154,26 +177,23 @@ export function registerHandlers(bot: Bot<MyContext>): void {
       ctx.session.task = text;
       ctx.session.step = "dueDate";
       await ctx.reply(
-        "📅 Topshirish sanasini yozing (<code>YYYY-MM-DD</code>).\n" +
-        "Bugun uchun <b>bugun</b> deb yozing yoki bo'sh qoldiring.",
+        "📅 Topshirish sanasini yozing.\n\n" +
+        "Qabul qilinadigan formatlar:\n" +
+        "<code>20.09.2026</code>  yoki  <code>2026-09-20</code>\n" +
+        "Bugun uchun: <b>bugun</b>",
         { parse_mode: "HTML" }
       );
       return;
     }
 
     if (step === "dueDate") {
-      let due: string;
-      if (["bugun", "", "-"].includes(text.toLowerCase())) {
-        due = new Date().toISOString().slice(0, 10);
-      } else {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-          await ctx.reply(
-            "❌ Sana formati noto'g'ri. <code>YYYY-MM-DD</code> yoki <b>bugun</b> deb yozing.",
-            { parse_mode: "HTML" }
-          );
-          return;
-        }
-        due = text;
+      const due = parseDate(text);
+      if (!due) {
+        await ctx.reply(
+          "❌ Sana noto'g'ri. Masalan: <code>20.09.2026</code> yoki <b>bugun</b>",
+          { parse_mode: "HTML" }
+        );
+        return;
       }
 
       const id = saveHomework(ctx.session.subject!, ctx.session.task!, due);
